@@ -11,6 +11,7 @@ from torch.nn import functional as F
 from torch.utils import data
 import torch.distributed as dist
 from torchvision import transforms, utils
+from tqdm import tqdm
 
 from model import Generator, Discriminator
 from dataset import FFHQ_Dataset
@@ -368,7 +369,7 @@ def train(args, loader, generator, discriminator, g_optim, d_optim, g_ema, devic
 
     sample_z = torch.randn(args.n_sample, args.latent, device=device)
 
-    for iter_idx in range(args.start_iter, args.iter):
+    for iter_idx in tqdm(range(args.start_iter, args.iter), ncols=70, initial=args.start_iter):
         time1 = time.time()
         
         real_img = next(loader)
