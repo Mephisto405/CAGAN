@@ -11,6 +11,7 @@ from torch.nn import functional as F
 from torch.utils import data
 import torch.distributed as dist
 from torchvision import transforms, utils
+from tqdm import tqdm
 
 from model import Generator, Discriminator
 from dataset import FFHQ_Dataset
@@ -368,7 +369,7 @@ def train(args, loader, generator, discriminator, g_optim, d_optim, g_ema, devic
 
     sample_z = torch.randn(args.n_sample, args.latent, device=device)
 
-    for iter_idx in range(args.start_iter, args.iter):
+    for iter_idx in tqdm(range(args.start_iter, args.iter), ncols=70, initial=args.start_iter):
         time1 = time.time()
         
         real_img = next(loader)
@@ -379,7 +380,7 @@ def train(args, loader, generator, discriminator, g_optim, d_optim, g_ema, devic
         D_Loss_BackProp(generator, discriminator, real_img, args, device, loss_dict, d_optim)
 
         # Discriminator regularization
-        if iter_idx % args.d_reg_every == 0:
+        if (iter_idx + 1) % args.d_reg_every == 0:
             r1_loss = D_Reg_BackProp(real_img, discriminator, args, d_optim)
 
         loss_dict['r1'] = r1_loss
@@ -388,7 +389,7 @@ def train(args, loader, generator, discriminator, g_optim, d_optim, g_ema, devic
         G_Loss_BackProp(generator, discriminator, args, device, loss_dict, g_optim, teacher_g, percept_loss, parsing_net)
 
         # Generator regularization
-        if iter_idx % args.g_reg_every == 0:
+        if (iter_idx + 1) % args.g_reg_every == 0:
             path_loss, path_lengths, mean_path_length, mean_path_length_avg = G_Reg_BackProp(generator, args, mean_path_length, g_optim)
             
         loss_dict['path'] = path_loss
@@ -413,7 +414,7 @@ def train(args, loader, generator, discriminator, g_optim, d_optim, g_ema, devic
             kd_l1_loss_val = 0
             kd_lpips_loss_val = 0
 
-        if iter_idx % 1 == 0:
+        if (iter_idx + 1) % 1 == 0:
             exp_log_file.write('Iter #: ' + str(iter_idx) + ' Train Time: ' + str(round(time3 - time1, 2)) +
                   ' D_Loss: ' + str(round(d_loss_val, 3))  + ' G_Loss: ' + str(round(g_loss_val, 3)) +
                   ' KD_L1_Loss: ' + str(round(kd_l1_loss_val, 3)) + ' KD_LPIPS_Loss: ' + str(round(kd_lpips_loss_val, 3)) + 
@@ -421,7 +422,7 @@ def train(args, loader, generator, discriminator, g_optim, d_optim, g_ema, devic
                   ' G_Mean_Path: ' + str(round(mean_path_length_avg, 4)) + '\n'
             )
 
-        if iter_idx % args.val_sample_freq == 0:
+        if (iter_idx + 1) % args.val_sample_freq == 0:
             with torch.no_grad():
                 g_ema_parallel.eval()
                 sample = g_ema_parallel([sample_z])
@@ -433,7 +434,7 @@ def train(args, loader, generator, discriminator, g_optim, d_optim, g_ema, devic
                     range=(-1, 1),
                 )
 
-        if (iter_idx % args.model_save_freq == 0) and (iter_idx > 0):            
+        if ((iter_idx + 1) % args.model_save_freq == 0) and (iter_idx > 0):            
             g_ema_parallel.eval()
             g_ema_fid = Get_Model_FID_Score(generator=g_ema_parallel, batch_size=args.fid_batch, num_sample=args.fid_n_sample, 
                             device=device, gpu_device_ids=train_hyperparams.gpu_device_ids, info_print=False)
