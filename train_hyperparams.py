@@ -3,12 +3,12 @@ KNOWLEDGE_DISTILLATION_MODE = ["Output_Only", "Intermediate"]
 LPIPS_IMAGE_SIZE = 256
 
 # Params
-data_folder = "/workspace/iycho/nalbi-test/ffhq_256/"
+data_folder = "/workspace/iycho/nalbi/ffhq_256/"
 generated_img_size = 256
 channel_multiplier = 2
 latent = 512
 n_mlp = 8
-ckpt = "Model/pruned_model/pruned_from_gt_pruned_model.pth"
+ckpt = "Model/pruned_model/pruned_from_full_size_model.pth"
 load_train_state = False
 
 gpu_device_ids = [0, 1]
@@ -35,3 +35,5 @@ kd_l1_lambda = 3
 kd_lpips_lambda = 3
 kd_mode = KNOWLEDGE_DISTILLATION_MODE[0]
 content_aware_KD = True
+
+use_amp = True

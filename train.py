@@ -3,11 +3,13 @@ import datetime
 import os
 import random
 import time
+from contextlib import nullcontext
 
 import numpy as np
 import torch
 import torch.distributed as dist
 from torch import autograd, nn, optim
+from torch.cuda.amp import GradScaler, autocast
 from torch.nn import functional as F
 from torch.utils import data
 from torch.utils.tensorboard import SummaryWriter
@@ -78,11 +80,14 @@ parser.add_argument("--kd_mode", type=str, default=train_hyperparams.kd_mode)
 parser.add_argument(
     "--content_aware_KD", type=bool, default=train_hyperparams.content_aware_KD
 )
+parser.add_argument("--use_amp", type=bool, default=train_hyperparams.use_amp)
 
 args = parser.parse_args()
 n_gpu = len(train_hyperparams.gpu_device_ids)
 device = train_hyperparams.primary_device
 args.distributed = n_gpu > 1
+if args.use_amp:
+    scaler = GradScaler()
 
 
 def Print_Experiment_Status(exp_log_file):
@@ -370,23 +375,29 @@ def D_Loss_BackProp(
     Usage:
         To update the discriminator based on the GAN loss
     """
+    with autocast() if args.use_amp else nullcontext():
+        requires_grad(generator, False)
+        requires_grad(discriminator, True)
 
-    requires_grad(generator, False)
-    requires_grad(discriminator, True)
+        noise = mixing_noise(args.batch_size, args.latent, args.mixing, device)
+        fake_img = generator(noise)
+        fake_pred = discriminator(fake_img)
+        real_pred = discriminator(real_img)
+        d_loss = d_logistic_loss(real_pred, fake_pred)
 
-    noise = mixing_noise(args.batch_size, args.latent, args.mixing, device)
-    fake_img = generator(noise)
-    fake_pred = discriminator(fake_img)
-    real_pred = discriminator(real_img)
-    d_loss = d_logistic_loss(real_pred, fake_pred)
-
-    loss_dict["d"] = d_loss
-    loss_dict["real_score"] = real_pred.mean()
-    loss_dict["fake_score"] = fake_pred.mean()
+        loss_dict["d"] = d_loss
+        loss_dict["real_score"] = real_pred.mean()
+        loss_dict["fake_score"] = fake_pred.mean()
 
     discriminator.zero_grad()
-    d_loss.backward()
-    d_optim.step()
+
+    if args.use_amp:
+        scaler.scale(d_loss).backward()
+        scaler.step(d_optim)
+        scaler.update()
+    else:
+        d_loss.backward()
+        d_optim.step()
 
 
 def D_Reg_BackProp(real_img, discriminator, args, d_optim):
@@ -394,15 +405,22 @@ def D_Reg_BackProp(real_img, discriminator, args, d_optim):
     Usage:
         To update the discriminator based on the regularization
     """
-
-    real_img.requires_grad = True
-    real_pred = discriminator(real_img)
-    r1_loss = d_r1_loss(real_pred, real_img)
+    with autocast() if args.use_amp else nullcontext():
+        real_img.requires_grad = True
+        real_pred = discriminator(real_img)
+        r1_loss = d_r1_loss(real_pred, real_img)
+        w_r1_loss = args.r1 / 2 * r1_loss * args.d_reg_every + 0 * real_pred[0]
 
     discriminator.zero_grad()
-    (args.r1 / 2 * r1_loss * args.d_reg_every + 0 * real_pred[0]).backward()
 
-    d_optim.step()
+    if args.use_amp:
+        scaler.scale(w_r1_loss).backward()
+        scaler.step(d_optim)
+        scaler.update()
+    else:
+        w_r1_loss.backward()
+        d_optim.step()
+
     return r1_loss
 
 
@@ -421,41 +439,49 @@ def G_Loss_BackProp(
     Usage:
         To update the generator based on the GAN loss and KD loss
     """
+    with autocast() if args.use_amp else nullcontext():
+        requires_grad(generator, True)
+        requires_grad(discriminator, False)
 
-    requires_grad(generator, True)
-    requires_grad(discriminator, False)
-
-    # GAN Loss
-    noise, inject_index = index_aware_mixing_noise(
-        args.batch_size, args.latent, args.mixing, args.n_latent, device
-    )
-    fake_img_list = generator(noise, return_rgb_list=True, inject_index=inject_index)
-    fake_img = fake_img_list[-1]
-    fake_pred = discriminator(fake_img)
-    g_loss = g_nonsaturating_loss(fake_pred)
-    loss_dict["g"] = g_loss
-
-    total_loss = g_loss
-
-    # KD Loss
-    if teacher_g is not None:
-        kd_l1_loss, kd_lpips_loss = KD_loss(
-            args,
-            teacher_g,
-            noise,
-            inject_index,
-            fake_img,
-            fake_img_list,
-            percept_loss,
-            parsing_net,
+        # GAN Loss
+        noise, inject_index = index_aware_mixing_noise(
+            args.batch_size, args.latent, args.mixing, args.n_latent, device
         )
-        loss_dict["kd_l1_loss"] = kd_l1_loss
-        loss_dict["kd_lpips_loss"] = kd_lpips_loss
-        total_loss = g_loss + kd_l1_loss + kd_lpips_loss
+        fake_img_list = generator(
+            noise, return_rgb_list=True, inject_index=inject_index
+        )
+        fake_img = fake_img_list[-1]
+        fake_pred = discriminator(fake_img)
+        g_loss = g_nonsaturating_loss(fake_pred)
+        loss_dict["g"] = g_loss
+
+        # KD Loss
+        if teacher_g is not None:
+            kd_l1_loss, kd_lpips_loss = KD_loss(
+                args,
+                teacher_g,
+                noise,
+                inject_index,
+                fake_img,
+                fake_img_list,
+                percept_loss,
+                parsing_net,
+            )
+            loss_dict["kd_l1_loss"] = kd_l1_loss
+            loss_dict["kd_lpips_loss"] = kd_lpips_loss
+            total_loss = g_loss + kd_l1_loss + kd_lpips_loss
+        else:
+            total_loss = g_loss
 
     generator.zero_grad()
-    total_loss.backward()
-    g_optim.step()
+
+    if args.use_amp:
+        scaler.scale(total_loss).backward()
+        scaler.step(g_optim)
+        scaler.update()
+    else:
+        total_loss.backward()
+        g_optim.step()
 
 
 def G_Reg_BackProp(generator, args, mean_path_length, g_optim):
@@ -463,25 +489,30 @@ def G_Reg_BackProp(generator, args, mean_path_length, g_optim):
     Usage:
         To update the generator based on the regularization
     """
+    with autocast() if args.use_amp else nullcontext():
+        path_batch_size = max(1, args.batch_size // args.path_batch_shrink)
+        noise = mixing_noise(path_batch_size, args.latent, args.mixing, device)
 
-    path_batch_size = max(1, args.batch_size // args.path_batch_shrink)
-    noise = mixing_noise(path_batch_size, args.latent, args.mixing, device)
+        fake_img, path_lengths = generator(noise, PPL_regularize=True)
+        decay = 0.01
+        path_mean = mean_path_length + decay * (path_lengths.mean() - mean_path_length)
+        path_loss = (path_lengths - path_mean).pow(2).mean()
+        mean_path_length = path_mean.detach()
 
-    fake_img, path_lengths = generator(noise, PPL_regularize=True)
-    decay = 0.01
-    path_mean = mean_path_length + decay * (path_lengths.mean() - mean_path_length)
-    path_loss = (path_lengths - path_mean).pow(2).mean()
-    mean_path_length = path_mean.detach()
+        weighted_path_loss = args.path_regularize * args.g_reg_every * path_loss
+
+        if args.path_batch_shrink:
+            weighted_path_loss += 0 * fake_img[0, 0, 0, 0]
 
     generator.zero_grad()
-    weighted_path_loss = args.path_regularize * args.g_reg_every * path_loss
 
-    if args.path_batch_shrink:
-        weighted_path_loss += 0 * fake_img[0, 0, 0, 0]
-
-    weighted_path_loss.backward()
-
-    g_optim.step()
+    if args.use_amp:
+        scaler.scale(weighted_path_loss).backward()
+        scaler.step(g_optim)
+        scaler.update()
+    else:
+        weighted_path_loss.backward()
+        g_optim.step()
 
     mean_path_length_avg = reduce_sum(mean_path_length).item() / get_world_size()
     return path_loss, path_lengths, mean_path_length, mean_path_length_avg
@@ -589,6 +620,7 @@ def train(
         real_score_val = loss_reduced["real_score"].mean().item()
         fake_score_val = loss_reduced["fake_score"].mean().item()
         path_length_val = loss_reduced["path_length"].mean().item()
+
         if teacher_g is not None:
             kd_l1_loss_val = loss_reduced["kd_l1_loss"].mean().item()
             kd_lpips_loss_val = loss_reduced["kd_lpips_loss"].mean().item()
@@ -783,7 +815,7 @@ if __name__ == "__main__":
     exp_dir = "Exp_" + cur_time
     os.mkdir(exp_dir)
     exp_log_file = open(exp_dir + "/" + cur_time + "_training_log.out", "w")
-    logger = SummaryWriter(os.path.join(exp_dir, cur_time + "_training_log.out"))
+    logger = SummaryWriter(os.path.join(exp_dir, "tensorboard"))
     Print_Experiment_Status(exp_log_file)
 
     train_start_time = time.time()
@@ -801,6 +833,7 @@ if __name__ == "__main__":
         parsing_net,
         exp_dir,
         exp_log_file,
+        logger,
     )
     train_end_time = time.time()
 

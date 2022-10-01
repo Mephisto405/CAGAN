@@ -5,6 +5,7 @@ import torch.autograd as autograd
 import torch.cuda.comm as comm
 import torch.distributed as dist
 from torch.autograd.function import once_differentiable
+from torch.cuda.amp import custom_bwd, custom_fwd
 from torch.utils.cpp_extension import load
 
 _src_path = path.join(path.dirname(path.abspath(__file__)), "src")
@@ -82,6 +83,7 @@ def _act_backward(ctx, x, dx):
 
 class InPlaceABN(autograd.Function):
     @staticmethod
+    @custom_fwd(cast_inputs=torch.float32)
     def forward(
         ctx,
         x,
@@ -134,6 +136,7 @@ class InPlaceABN(autograd.Function):
         return x
 
     @staticmethod
+    @custom_bwd
     @once_differentiable
     def backward(ctx, dz):
         z, var, weight, bias = ctx.saved_tensors
@@ -158,6 +161,7 @@ class InPlaceABN(autograd.Function):
 
 class InPlaceABNSync(autograd.Function):
     @classmethod
+    @custom_fwd(cast_inputs=torch.float32)
     def forward(
         cls,
         ctx,
@@ -234,6 +238,7 @@ class InPlaceABNSync(autograd.Function):
         return x
 
     @staticmethod
+    @custom_bwd
     @once_differentiable
     def backward(ctx, dz):
         z, var, weight, bias = ctx.saved_tensors

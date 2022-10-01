@@ -2,6 +2,7 @@ import os
 
 import torch
 from torch.autograd import Function
+from torch.cuda.amp import custom_bwd, custom_fwd
 from torch.nn import functional as F
 from torch.utils.cpp_extension import load
 
@@ -17,6 +18,7 @@ upfirdn2d_op = load(
 
 class UpFirDn2dBackward(Function):
     @staticmethod
+    @custom_fwd(cast_inputs=torch.float32)
     def forward(
         ctx, grad_output, kernel, grad_kernel, up, down, pad, g_pad, in_size, out_size
     ):
@@ -59,6 +61,7 @@ class UpFirDn2dBackward(Function):
         return grad_input
 
     @staticmethod
+    @custom_bwd
     def backward(ctx, gradgrad_input):
         (kernel,) = ctx.saved_tensors
 
@@ -86,6 +89,7 @@ class UpFirDn2dBackward(Function):
 
 class UpFirDn2d(Function):
     @staticmethod
+    @custom_fwd(cast_inputs=torch.float32)
     def forward(ctx, input, kernel, up, down, pad):
         up_x, up_y = up
         down_x, down_y = down
@@ -123,6 +127,7 @@ class UpFirDn2d(Function):
         return out
 
     @staticmethod
+    @custom_bwd
     def backward(ctx, grad_output):
         kernel, grad_kernel = ctx.saved_tensors
 
