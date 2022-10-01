@@ -1,37 +1,33 @@
 import argparse
-import random
-import os
-import time
 import datetime
+import os
+import random
+import time
 
 import numpy as np
 import torch
-from torch import nn, autograd, optim
+import torch.distributed as dist
+from torch import autograd, nn, optim
 from torch.nn import functional as F
 from torch.utils import data
-import torch.distributed as dist
 from torch.utils.tensorboard import SummaryWriter
 from torchvision import transforms, utils
 from tqdm import tqdm
 
-from model import Generator, Discriminator
-from dataset import FFHQ_Dataset
-from Miscellaneous.distributed import (
-    reduce_loss_dict,
-    reduce_sum,
-    get_world_size,
-)
-from Util.network_util import Build_Generator_From_Dict
-from Util.content_aware_pruning import (
-    Get_Parsing_Net,
-    Batch_Img_Parsing,
-    Get_Masked_Tensor,
-)
-from Evaluation.fid import Get_Model_FID_Score
 import lpips
 
 # Hyper-parameters for training!
 import train_hyperparams
+from dataset import FFHQ_Dataset
+from Evaluation.fid import Get_Model_FID_Score
+from Miscellaneous.distributed import get_world_size, reduce_loss_dict, reduce_sum
+from model import Discriminator, Generator
+from Util.content_aware_pruning import (
+    Batch_Img_Parsing,
+    Get_Masked_Tensor,
+    Get_Parsing_Net,
+)
+from Util.network_util import Build_Generator_From_Dict
 
 parser = argparse.ArgumentParser()
 
