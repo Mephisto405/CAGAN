@@ -35,5 +35,3 @@ kd_l1_lambda = 3
 kd_lpips_lambda = 3
 kd_mode = KNOWLEDGE_DISTILLATION_MODE[0]
 content_aware_KD = True
-
-use_amp = True

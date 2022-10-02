@@ -80,7 +80,7 @@ parser.add_argument("--kd_mode", type=str, default=train_hyperparams.kd_mode)
 parser.add_argument(
     "--content_aware_KD", type=bool, default=train_hyperparams.content_aware_KD
 )
-parser.add_argument("--use_amp", type=bool, default=train_hyperparams.use_amp)
+parser.add_argument("--use_amp", action="store_true")
 
 args = parser.parse_args()
 n_gpu = len(train_hyperparams.gpu_device_ids)

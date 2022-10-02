@@ -21,6 +21,7 @@ parser.add_argument(
 parser.add_argument("--n_sample", type=int, default=50000)
 parser.add_argument("--batch_size", type=int, default=64)
 parser.add_argument("--info_print", action="store_true", default=False)
+parser.add_argument("--use_amp", action="store_true")
 
 args = parser.parse_args()
 
@@ -42,6 +43,7 @@ fid = Get_Model_FID_Score(
     device=device,
     gpu_device_ids=gpu_device_ids,
     info_print=args.info_print,
+    use_amp=args.use_amp,
 )
 end_time = time.time()
 print("Total time is: " + str(round(end_time - start_time, 4)))

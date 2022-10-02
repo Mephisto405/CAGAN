@@ -1,13 +1,16 @@
 import argparse
 import pickle as pkl
 import time
+from contextlib import nullcontext
 from pathlib import Path
 
 import numpy as np
 import torch
 from scipy import linalg
 from torch import nn
-from tqdm import tqdm
+from torch.cuda.amp import autocast
+
+from model import Generator
 
 from .calc_inception import load_patched_inception_v3
 
@@ -36,26 +39,28 @@ def extract_feature_from_samples(
     n_sample,
     device,
     info_print=False,
+    use_amp=False,
 ):
     with torch.no_grad():
-        generator.eval()
-        inception.eval()
-        n_batch = n_sample // batch_size
-        resid = n_sample - (n_batch - 1) * batch_size
-        batch_sizes = [batch_size] * (n_batch - 1) + [resid]
-        features = []
+        with autocast() if use_amp else nullcontext():
+            generator.eval()
+            inception.eval()
+            n_batch = n_sample // batch_size
+            resid = n_sample - (n_batch - 1) * batch_size
+            batch_sizes = [batch_size] * (n_batch - 1) + [resid]
+            features = []
 
-        for idx, batch in enumerate(batch_sizes):
-            if info_print:
-                print("Processing Batch: " + str(idx))
-            latent = torch.randn(batch, 512, device=device)
-            img = generator(
-                [latent], truncation=truncation, truncation_latent=truncation_latent
-            )
-            feat = inception(img)[0].view(img.shape[0], -1)
-            features.append(feat.to("cpu"))
+            for idx, batch in enumerate(batch_sizes):
+                if info_print:
+                    print("Processing Batch: " + str(idx))
+                latent = torch.randn(batch, 512, device=device)
+                img = generator(
+                    [latent], truncation=truncation, truncation_latent=truncation_latent
+                )
+                feat = inception(img)[0].view(img.shape[0], -1)
+                features.append(feat.to("cpu"))
 
-        features = torch.cat(features, 0)
+            features = torch.cat(features, 0)
 
     return features
 
@@ -96,6 +101,7 @@ def Get_Model_FID_Score(
     batch_size=100,
     num_sample=50000,
     info_print=False,
+    use_amp=False,
 ):
     """
     Usage:
@@ -146,6 +152,7 @@ def Get_Model_FID_Score(
         num_sample,
         device,
         info_print,
+        use_amp,
     ).numpy()
     end_time = time.time()
     if info_print:
