@@ -1,0 +1,23 @@
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Python: train.py",
+            "type": "python",
+            "request": "launch",
+            "program": "train.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "env": {"CUDA_VISIBLE_DEVICES": "2,3" },
+            "args": [
+                "--ckpt",
+                "Model/pruned_model/pruned_from_full_size_model.pth",
+                "--teacher_ckpt",
+                "Model/full_size_model/256px_full_size.pt",
+            ]
+        }
+    ]
+}
