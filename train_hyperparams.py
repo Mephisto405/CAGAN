@@ -9,7 +9,7 @@ channel_multiplier = 2
 latent = 512
 n_mlp = 8
 ckpt = "Model/pruned_model/pruned_from_full_size_model.pth"
-load_train_state = False
+load_train_state = True
 
 gpu_device_ids = [0, 1]
 primary_device = "cuda:0"
@@ -20,7 +20,7 @@ init_lr = 0.002
 discriminator_r1 = 10
 generator_path_reg_weight = 2
 path_reg_batch_shrink = 2
-g_reg_freq = 4  # 4
+g_reg_freq = 1000  # 4
 d_reg_freq = 16
 noise_mixing = 0.9
 

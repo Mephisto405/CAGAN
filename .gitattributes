@@ -1,5 +1,1 @@
-Model/full_size_model/256px_full_size.pt filter=lfs diff=lfs merge=lfs -text
-Model/pruned_model/049999.pt filter=lfs diff=lfs merge=lfs -text
-Model/pruned_model/pruned_from_full_size_model.pth filter=lfs diff=lfs merge=lfs -text
-Model/pruned_model/pruned_from_gt_pruned_model.pth filter=lfs diff=lfs merge=lfs -text
-Model/pruned_model/256px_ca_11x_model.pt filter=lfs diff=lfs merge=lfs -text
+Model/**/*.pt* filter=lfs diff=lfs merge=lfs -text
